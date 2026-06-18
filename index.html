@@ -42,6 +42,24 @@
   .day-card .dsub { font-size: 10px; color: #999; }
   .day-card.danger .dsub { color: #A32D2D; }
   .day-card.good .dsub { color: #3B6D11; }
+  .cap-section { margin-top: 24px; }
+  .cap-title { font-size: 13px; font-weight: 600; color: #1A1A1A; margin-bottom: 6px; }
+  .cap-desc { font-size: 12px; color: #888; margin-bottom: 14px; line-height: 1.6; }
+  .cap-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .cap-card { border-radius: 8px; padding: 10px 8px; text-align: center; border: 0.5px solid #E5E5E5; background: #FFFFFF; }
+  .cap-card .clabel { font-size: 12px; color: #888; margin-bottom: 6px; }
+  .cap-bar-track { height: 6px; border-radius: 3px; background: #F0F0F0; overflow: hidden; margin-bottom: 6px; }
+  .cap-bar-fill { height: 100%; border-radius: 3px; }
+  .cap-pct { font-size: 14px; font-weight: 700; }
+  .cap-card.safe .cap-pct { color: #27500A; }
+  .cap-card.warn .cap-pct { color: #854F0B; }
+  .cap-card.danger .cap-pct { color: #A32D2D; }
+  .cap-card .cwho { font-size: 9px; color: #999; margin-top: 4px; line-height: 1.4; }
+  .role-weight-box { margin-top: 16px; background: #F5F5F5; border-radius: 8px; padding: 12px 14px; }
+  .role-weight-title { font-size: 11px; font-weight: 600; color: #555; margin-bottom: 8px; }
+  .role-weight-row { display: flex; justify-content: space-between; font-size: 12px; color: #555; padding: 3px 0; }
+  .role-weight-row span:last-child { font-weight: 600; color: #3C3489; }
+  .role-weight-row input[type="range"] { width: 100px; vertical-align: middle; margin: 0 8px; }
   .member-list { margin-top: 20px; }
   .member-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 0.5px solid #F0F0F0; }
   .avatar { width: 34px; height: 34px; border-radius: 50%; background: #EEEDFE; color: #534AB7; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
@@ -95,6 +113,16 @@
       <div class="day-grid" id="dayGrid"></div>
       <div class="member-list" id="memberList"></div>
       <div class="status-banner" id="statusBanner"></div>
+
+      <div class="cap-section">
+        <div class="cap-title">업무 대응력 예측 (직급별 역량 가중)</div>
+        <div class="cap-desc">팀 리드·시니어·주니어의 업무 처리 역량 차이를 반영해, 그날 출근 인원으로 실제 응대가 가능한지 예측합니다. 단순 출근 인원수가 아니라 <strong>역량 총합 기준</strong>으로 판단합니다.</div>
+        <div class="cap-grid" id="capGrid"></div>
+        <div class="role-weight-box">
+          <div class="role-weight-title">직급별 역량 가중치 (편집 가능)</div>
+          <div id="roleWeightList"></div>
+        </div>
+      </div>
     </div>
 
     <div class="panel" id="panel-recommend">
@@ -124,6 +152,8 @@ const DAY_FULL = ['월요일', '화요일', '수요일', '목요일', '금요일
 const MIN_STAFF = 5;
 const MAX_OFF = 8 - MIN_STAFF;
 
+let roleWeights = { '팀 리드': 100, '시니어': 80, '주니어': 60 };
+
 let members = [
   { id: 1, name: '김서연', role: '팀 리드', off: 4 },
   { id: 2, name: '박준호', role: '시니어', off: 4 },
@@ -134,6 +164,34 @@ let members = [
   { id: 7, name: '오민재', role: '주니어', off: 0 },
   { id: 8, name: '강태윤', role: '주니어', off: 0 },
 ];
+
+function offCounts() {
+  const counts = [0,0,0,0,0];
+  members.forEach(m => counts[m.off]++);
+  return counts;
+}
+
+function totalCapacity() {
+  return members.reduce((sum, m) => sum + roleWeights[m.role], 0);
+}
+
+function dayCapacity(dayIndex) {
+  return members
+    .filter(m => m.off !== dayIndex)
+    .reduce((sum, m) => sum + roleWeights[m.role], 0);
+}
+
+function capacityStatus(pct) {
+  if (pct >= 80) return 'safe';
+  if (pct >= 65) return 'warn';
+  return 'danger';
+}
+
+function capacityColor(status) {
+  if (status === 'safe') return '#97C459';
+  if (status === 'warn') return '#FAC775';
+  return '#F09595';
+}
 
 function offCounts() {
   const counts = [0,0,0,0,0];
@@ -207,10 +265,52 @@ function renderStatusBanner() {
   }
 }
 
+function renderCapGrid() {
+  const total = totalCapacity();
+  const grid = document.getElementById('capGrid');
+  grid.innerHTML = DAYS.map((d, i) => {
+    const cap = dayCapacity(i);
+    const pct = Math.round((cap / total) * 100);
+    const status = capacityStatus(pct);
+    const color = capacityColor(status);
+    const working = members.filter(m => m.off !== i);
+    const counts = {};
+    working.forEach(m => { counts[m.role] = (counts[m.role] || 0) + 1; });
+    const whoText = Object.keys(counts).map(r => `${r} ${counts[r]}`).join(' · ');
+    return `<div class="cap-card ${status}">
+      <div class="clabel">${d}</div>
+      <div class="cap-bar-track"><div class="cap-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+      <div class="cap-pct">${pct}%</div>
+      <div class="cwho">${whoText}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderRoleWeights() {
+  const box = document.getElementById('roleWeightList');
+  box.innerHTML = Object.keys(roleWeights).map(role => `
+    <div class="role-weight-row">
+      <span>${role}</span>
+      <span>
+        <input type="range" min="20" max="100" step="5" value="${roleWeights[role]}"
+          oninput="updateWeight('${role}', this.value)">
+        ${roleWeights[role]}
+      </span>
+    </div>
+  `).join('');
+}
+
+function updateWeight(role, value) {
+  roleWeights[role] = parseInt(value, 10);
+  renderSimulate();
+}
+
 function renderSimulate() {
   renderDayGrid();
   renderMemberList();
   renderStatusBanner();
+  renderCapGrid();
+  renderRoleWeights();
 }
 
 function renderRecommend() {
